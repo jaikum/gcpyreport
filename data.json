@@ -1,0 +1,47 @@
+{
+    "total_seats": 16,
+    "seats": [
+        {
+            "created_at": "2025-04-15T10:22:47+04:00",
+            "assignee": {
+                "login": "FAB9386_BANKFAB",
+                "id": 206715892,
+                "node_id": "U_kgDODFI79A",
+                "avatar_url": "https://avatars.githubusercontent.com/u/206715892?v=4",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/FAB9386_BANKFAB",
+                "html_url": "https://github.com/FAB9386_BANKFAB",
+                "followers_url": "https://api.github.com/users/FAB9386_BANKFAB/followers",
+                "following_url": "https://api.github.com/users/FAB9386_BANKFAB/following{/other_user}",
+                "gists_url": "https://api.github.com/users/FAB9386_BANKFAB/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/FAB9386_BANKFAB/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/FAB9386_BANKFAB/subscriptions",
+                "organizations_url": "https://api.github.com/users/FAB9386_BANKFAB/orgs",
+                "repos_url": "https://api.github.com/users/FAB9386_BANKFAB/repos",
+                "events_url": "https://api.github.com/users/FAB9386_BANKFAB/events{/privacy}",
+                "received_events_url": "https://api.github.com/users/FAB9386_BANKFAB/received_events",
+                "type": "User",
+                "user_view_type": "public",
+                "site_admin": false
+            },
+            "pending_cancellation_date": null,
+            "plan_type": "business",
+            "updated_at": "2025-04-15T10:56:25+04:00",
+            "last_activity_at": "2025-04-21T10:35:43+04:00",
+            "last_activity_editor": "vscode/1.89.1/",
+            "assigning_team": {
+                "id": 78010,
+                "name": "Copilot-Pilot-Users",
+                "slug": "copilot-pilot-users",
+                "sync_to_organizations": "disabled",
+                "url": "https://api.github.com/enterprises/309542/teams/78010",
+                "group_id": null,
+                "group_name": null,
+                "html_url": "https://github.com/enterprises/bankfab-github/teams/copilot-pilot-users",
+                "members_url": "https://api.github.com/enterprises/309542/teams/78010/members{/member}",
+                "created_at": "2025-04-15T06:26:36Z",
+                "updated_at": "2025-05-05T12:49:04Z"
+            }
+        }
+    ]
+} 
