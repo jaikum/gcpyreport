@@ -23,82 +23,115 @@ This dashboard provides insights into GitHub Copilot usage metrics including:
 """)
 
 # Function to process the data
-def process_data(data):
-    # Convert to DataFrame
-    df = pd.DataFrame(data)
-    
-    # Convert date to datetime
-    df['date'] = pd.to_datetime(df['date'])
-    
-    # Extract IDE chat metrics
+def flatten_data(data):
+    rows = []
     ide_chat_data = []
-    for _, row in df.iterrows():
-        for editor in row['copilot_ide_chat']['editors']:
-            for model in editor['models']:
+    code_completion_data = []
+    for entry in data:
+        date = pd.to_datetime(entry.get('date'))
+        total_active_users = entry.get('total_active_users', 0)
+        total_engaged_users = entry.get('total_engaged_users', 0)
+        
+        # IDE Chat
+        ide_chat = entry.get('copilot_ide_chat', {})
+        for editor in ide_chat.get('editors', []):
+            editor_name = editor.get('name')
+            for model in editor.get('models', []):
                 ide_chat_data.append({
-                    'date': row['date'],
-                    'editor': editor['name'],
-                    'total_chats': model['total_chats'],
-                    'total_engaged_users': model['total_engaged_users'],
+                    'date': date,
+                    'editor': editor_name,
+                    'model': model.get('name'),
+                    'is_custom_model': model.get('is_custom_model', False),
+                    'total_chats': model.get('total_chats', 0),
+                    'total_engaged_users': model.get('total_engaged_users', 0),
                     'total_chat_copy_events': model.get('total_chat_copy_events', 0),
                     'total_chat_insertion_events': model.get('total_chat_insertion_events', 0)
                 })
-    
+
+        # IDE Code Completions
+        ide_code = entry.get('copilot_ide_code_completions', {})
+        for editor in ide_code.get('editors', []):
+            editor_name = editor.get('name')
+            for model in editor.get('models', []):
+                model_name = model.get('name')
+                is_custom_model = model.get('is_custom_model', False)
+                for lang in model.get('languages', []):
+                    code_completion_data.append({
+                        'date': date,
+                        'editor': editor_name,
+                        'model': model_name,
+                        'is_custom_model': is_custom_model,
+                        'language': lang.get('name'),
+                        'total_engaged_users': lang.get('total_engaged_users', 0),
+                        'total_code_acceptances': lang.get('total_code_acceptances', 0),
+                        'total_code_suggestions': lang.get('total_code_suggestions', 0),
+                        'total_code_lines_accepted': lang.get('total_code_lines_accepted', 0),
+                        'total_code_lines_suggested': lang.get('total_code_lines_suggested', 0)
+                    })
+
+        rows.append({
+            'date': date,
+            'total_active_users': total_active_users,
+            'total_engaged_users': total_engaged_users,
+            'copilot_ide_chat.total_engaged_users': ide_chat.get('total_engaged_users', 0),
+            'copilot_ide_code_completions.total_engaged_users': ide_code.get('total_engaged_users', 0),
+            'copilot_dotcom_chat.total_engaged_users': entry.get('copilot_dotcom_chat', {}).get('total_engaged_users', 0),
+            'copilot_dotcom_pull_requests.total_engaged_users': entry.get('copilot_dotcom_pull_requests', {}).get('total_engaged_users', 0)
+        })
+
+    df = pd.DataFrame(rows)
     ide_chat_df = pd.DataFrame(ide_chat_data)
-    
-    # Extract code completion metrics
-    code_completion_data = []
-    for _, row in df.iterrows():
-        if 'copilot_ide_code_completions' in row and 'editors' in row['copilot_ide_code_completions']:
-            for editor in row['copilot_ide_code_completions']['editors']:
-                for model in editor.get('models', []):
-                    for language in model.get('languages', []):
-                        code_completion_data.append({
-                            'date': row['date'],
-                            'editor': editor['name'],
-                            'language': language['name'],
-                            'total_code_acceptances': language.get('total_code_acceptances', 0),
-                            'total_code_suggestions': language.get('total_code_suggestions', 0),
-                            'total_code_lines_accepted': language.get('total_code_lines_accepted', 0),
-                            'total_code_lines_suggested': language.get('total_code_lines_suggested', 0)
-                        })
-    
     code_completion_df = pd.DataFrame(code_completion_data)
-    
     return df, ide_chat_df, code_completion_df
+
+def process_data(data):
+    return flatten_data(data)
 
 # Function to create visualizations
 def create_visualizations(df, ide_chat_df, code_completion_df):
+    # Ensure 'date' columns are datetime
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    if 'date' in ide_chat_df.columns:
+        ide_chat_df['date'] = pd.to_datetime(ide_chat_df['date'], errors='coerce')
+    if 'date' in code_completion_df.columns:
+        code_completion_df['date'] = pd.to_datetime(code_completion_df['date'], errors='coerce')
+
     # 1. Daily Active Users
     fig_users = px.line(df, x='date', y='total_active_users',
                        title='Daily Active Users',
                        labels={'date': 'Date', 'total_active_users': 'Active Users'})
-    
+
     # 2. IDE Chat Usage by Editor
     fig_ide_chat = px.bar(ide_chat_df.groupby(['date', 'editor'])['total_chats'].sum().reset_index(),
                          x='date', y='total_chats', color='editor',
                          title='IDE Chat Usage by Editor',
                          labels={'date': 'Date', 'total_chats': 'Total Chats', 'editor': 'Editor'})
-    
+
     # 3. Code Completion Metrics by Language
     fig_code_completion = px.bar(code_completion_df.groupby('language')['total_code_suggestions'].sum().reset_index(),
                                x='language', y='total_code_suggestions',
                                title='Total Code Suggestions by Language',
                                labels={'language': 'Language', 'total_code_suggestions': 'Total Suggestions'})
-    
+
     # 4. Code Acceptance Rate
-    code_completion_df['acceptance_rate'] = (code_completion_df['total_code_acceptances'] / 
+    code_completion_df['acceptance_rate'] = (code_completion_df['total_code_acceptances'] /
                                            code_completion_df['total_code_suggestions'] * 100)
     fig_acceptance = px.bar(code_completion_df.groupby('language')['acceptance_rate'].mean().reset_index(),
                           x='language', y='acceptance_rate',
                           title='Code Acceptance Rate by Language (%)',
                           labels={'language': 'Language', 'acceptance_rate': 'Acceptance Rate (%)'})
-    
+
     # 5. User Engagement Over Time
-    fig_engagement = px.line(df, x='date', y=['total_active_users', 'total_engaged_users'],
+    fig_engagement = px.line(df, x='date', 
+                           y=['total_active_users', 'total_engaged_users',
+                              'copilot_ide_chat.total_engaged_users',
+                              'copilot_ide_code_completions.total_engaged_users',
+                              'copilot_dotcom_chat.total_engaged_users',
+                              'copilot_dotcom_pull_requests.total_engaged_users'],
                            title='User Engagement Over Time',
                            labels={'date': 'Date', 'value': 'Number of Users', 'variable': 'User Type'})
-    
+
     # 6. Daily Usage Heatmap
     df['day_of_week'] = df['date'].dt.day_name()
     df['hour'] = df['date'].dt.hour
@@ -141,8 +174,9 @@ def main():
         
         # Add date filters in sidebar
         st.sidebar.subheader("Date Range Filter")
-        min_date = df['date'].min()
-        max_date = df['date'].max()
+        df['date'] = pd.to_datetime(df['date'])
+        min_date = df['date'].min().date()
+        max_date = df['date'].max().date()
         
         start_date = st.sidebar.date_input(
             "Start Date",
@@ -161,6 +195,15 @@ def main():
         # Convert date inputs to datetime
         start_date = pd.to_datetime(start_date)
         end_date = pd.to_datetime(end_date)
+        
+        # Convert string dates to datetime in dataframes if they aren't already
+        df['date'] = pd.to_datetime(df['date'])
+        ide_chat_df['date'] = pd.to_datetime(ide_chat_df['date'])
+        code_completion_df['date'] = pd.to_datetime(code_completion_df['date'])
+        
+        # Convert input dates to datetime64[ns] for comparison
+        start_date = pd.Timestamp(start_date)
+        end_date = pd.Timestamp(end_date)
         
         # Filter data based on date range
         df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
@@ -188,7 +231,7 @@ def main():
         
         # User Statistics Section
         st.subheader("User Statistics")
-        user_col1, user_col2 = st.columns(2)
+        user_col1, user_col2, user_col3 = st.columns(3)
         
         with user_col1:
             st.metric("Average Daily Active Users", round(df['total_active_users'].mean(), 2))
@@ -203,6 +246,12 @@ def main():
                      round(ide_chat_df['total_chats'].sum() / df['total_active_users'].sum(), 2))
             st.metric("Average Code Acceptances per User",
                      round(code_completion_df['total_code_acceptances'].sum() / df['total_active_users'].sum(), 2))
+        
+        with user_col3:
+            st.metric("GitHub.com Chat Users", df['copilot_dotcom_chat.total_engaged_users'].sum())
+            st.metric("GitHub.com PR Users", df['copilot_dotcom_pull_requests.total_engaged_users'].sum())
+            engagement_ratio = round((df['copilot_ide_chat.total_engaged_users'].sum() / df['total_engaged_users'].sum()) * 100, 2)
+            st.metric("IDE Chat Engagement Ratio", f"{engagement_ratio}%")
         
         # Display visualizations
         st.plotly_chart(fig_users, use_container_width=True)
