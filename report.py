@@ -110,13 +110,16 @@ def create_visualizations(df, ide_chat_df, code_completion_df):
                                title='Total Code Suggestions by Language',
                                labels={'language': 'Language', 'total_code_suggestions': 'Total Suggestions'})
 
-    # 4. Code Acceptance Rate - optimized calculation
+    # 4. Code Acceptance Rate - optimized calculation with safe division
     acceptance_agg = code_completion_df.groupby('language', as_index=False).agg({
         'total_code_acceptances': 'sum',
         'total_code_suggestions': 'sum'
     })
-    acceptance_agg['acceptance_rate'] = (acceptance_agg['total_code_acceptances'] / 
-                                         acceptance_agg['total_code_suggestions'] * 100)
+    acceptance_agg['acceptance_rate'] = (
+        (acceptance_agg['total_code_acceptances'] / acceptance_agg['total_code_suggestions'] * 100)
+        .fillna(0)
+        .replace([float('inf'), -float('inf')], 0)
+    )
     fig_acceptance = px.bar(acceptance_agg,
                           x='language', y='acceptance_rate',
                           title='Code Acceptance Rate by Language (%)',

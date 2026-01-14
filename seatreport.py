@@ -33,17 +33,25 @@ def process_data(json_data):
         if col in df.columns:
             df[col] = pd.to_datetime(df[col])
     
-    # Extract team information using vectorized operations
+    # Extract team information using single pass - optimized
     if 'assigning_team' in df.columns:
-        # Use .str accessor where possible, or apply only once
-        df['team_name'] = df['assigning_team'].apply(lambda x: x.get('name') if isinstance(x, dict) else None)
-        df['team_id'] = df['assigning_team'].apply(lambda x: x.get('id') if isinstance(x, dict) else None)
+        def extract_team(x):
+            if isinstance(x, dict):
+                return pd.Series({'team_name': x.get('name'), 'team_id': x.get('id')})
+            return pd.Series({'team_name': None, 'team_id': None})
+        df[['team_name', 'team_id']] = df['assigning_team'].apply(extract_team)
     
-    # Extract assignee information using vectorized operations
+    # Extract assignee information using single pass - optimized
     if 'assignee' in df.columns:
-        df['user_login'] = df['assignee'].apply(lambda x: x.get('login') if isinstance(x, dict) else None)
-        df['user_type'] = df['assignee'].apply(lambda x: x.get('type') if isinstance(x, dict) else None)
-        df['user_id'] = df['assignee'].apply(lambda x: x.get('id') if isinstance(x, dict) else None)
+        def extract_assignee(x):
+            if isinstance(x, dict):
+                return pd.Series({
+                    'user_login': x.get('login'),
+                    'user_type': x.get('type'),
+                    'user_id': x.get('id')
+                })
+            return pd.Series({'user_login': None, 'user_type': None, 'user_id': None})
+        df[['user_login', 'user_type', 'user_id']] = df['assignee'].apply(extract_assignee)
     
     # Add total seats count from the root level
     df['total_available_seats'] = json_data.get('total_seats', 0)
