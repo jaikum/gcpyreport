@@ -89,35 +89,35 @@ def process_data(data):
 
 # Function to create visualizations
 def create_visualizations(df, ide_chat_df, code_completion_df):
-    # Ensure 'date' columns are datetime
-    if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    if 'date' in ide_chat_df.columns:
-        ide_chat_df['date'] = pd.to_datetime(ide_chat_df['date'], errors='coerce')
-    if 'date' in code_completion_df.columns:
-        code_completion_df['date'] = pd.to_datetime(code_completion_df['date'], errors='coerce')
+    # Date columns are already datetime from flatten_data, no need to convert again
 
     # 1. Daily Active Users
     fig_users = px.line(df, x='date', y='total_active_users',
                        title='Daily Active Users',
                        labels={'date': 'Date', 'total_active_users': 'Active Users'})
 
-    # 2. IDE Chat Usage by Editor
-    fig_ide_chat = px.bar(ide_chat_df.groupby(['date', 'editor'])['total_chats'].sum().reset_index(),
+    # 2. IDE Chat Usage by Editor - optimized groupby
+    ide_chat_agg = ide_chat_df.groupby(['date', 'editor'], as_index=False)['total_chats'].sum()
+    fig_ide_chat = px.bar(ide_chat_agg,
                          x='date', y='total_chats', color='editor',
                          title='IDE Chat Usage by Editor',
                          labels={'date': 'Date', 'total_chats': 'Total Chats', 'editor': 'Editor'})
 
-    # 3. Code Completion Metrics by Language
-    fig_code_completion = px.bar(code_completion_df.groupby('language')['total_code_suggestions'].sum().reset_index(),
+    # 3. Code Completion Metrics by Language - optimized groupby
+    code_comp_agg = code_completion_df.groupby('language', as_index=False)['total_code_suggestions'].sum()
+    fig_code_completion = px.bar(code_comp_agg,
                                x='language', y='total_code_suggestions',
                                title='Total Code Suggestions by Language',
                                labels={'language': 'Language', 'total_code_suggestions': 'Total Suggestions'})
 
-    # 4. Code Acceptance Rate
-    code_completion_df['acceptance_rate'] = (code_completion_df['total_code_acceptances'] /
-                                           code_completion_df['total_code_suggestions'] * 100)
-    fig_acceptance = px.bar(code_completion_df.groupby('language')['acceptance_rate'].mean().reset_index(),
+    # 4. Code Acceptance Rate - optimized calculation
+    acceptance_agg = code_completion_df.groupby('language', as_index=False).agg({
+        'total_code_acceptances': 'sum',
+        'total_code_suggestions': 'sum'
+    })
+    acceptance_agg['acceptance_rate'] = (acceptance_agg['total_code_acceptances'] / 
+                                         acceptance_agg['total_code_suggestions'] * 100)
+    fig_acceptance = px.bar(acceptance_agg,
                           x='language', y='acceptance_rate',
                           title='Code Acceptance Rate by Language (%)',
                           labels={'language': 'Language', 'acceptance_rate': 'Acceptance Rate (%)'})
@@ -132,10 +132,11 @@ def create_visualizations(df, ide_chat_df, code_completion_df):
                            title='User Engagement Over Time',
                            labels={'date': 'Date', 'value': 'Number of Users', 'variable': 'User Type'})
 
-    # 6. Daily Usage Heatmap
-    df['day_of_week'] = df['date'].dt.day_name()
-    df['hour'] = df['date'].dt.hour
-    usage_heatmap = df.pivot_table(
+    # 6. Daily Usage Heatmap - optimized with temporary columns
+    df_heatmap = df.copy()
+    df_heatmap['day_of_week'] = df_heatmap['date'].dt.day_name()
+    df_heatmap['hour'] = df_heatmap['date'].dt.hour
+    usage_heatmap = df_heatmap.pivot_table(
         values='total_active_users',
         index='day_of_week',
         columns='hour',
@@ -174,7 +175,7 @@ def main():
         
         # Add date filters in sidebar
         st.sidebar.subheader("Date Range Filter")
-        df['date'] = pd.to_datetime(df['date'])
+        # Date is already datetime from process_data
         min_date = df['date'].min().date()
         max_date = df['date'].max().date()
         
@@ -192,20 +193,11 @@ def main():
             max_value=max_date
         )
         
-        # Convert date inputs to datetime
-        start_date = pd.to_datetime(start_date)
-        end_date = pd.to_datetime(end_date)
-        
-        # Convert string dates to datetime in dataframes if they aren't already
-        df['date'] = pd.to_datetime(df['date'])
-        ide_chat_df['date'] = pd.to_datetime(ide_chat_df['date'])
-        code_completion_df['date'] = pd.to_datetime(code_completion_df['date'])
-        
-        # Convert input dates to datetime64[ns] for comparison
+        # Convert date inputs to datetime for comparison
         start_date = pd.Timestamp(start_date)
         end_date = pd.Timestamp(end_date)
         
-        # Filter data based on date range
+        # Filter data based on date range (dates already datetime from process_data)
         df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
         ide_chat_df = ide_chat_df[(ide_chat_df['date'] >= start_date) & (ide_chat_df['date'] <= end_date)]
         code_completion_df = code_completion_df[(code_completion_df['date'] >= start_date) & (code_completion_df['date'] <= end_date)]
@@ -218,16 +210,23 @@ def main():
         # Display date range
         st.subheader(f"Data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         
+        # Cache frequently used sums for performance
+        total_active_users = df['total_active_users'].sum()
+        total_engaged_users = df['total_engaged_users'].sum()
+        total_chats = ide_chat_df['total_chats'].sum()
+        total_suggestions = code_completion_df['total_code_suggestions'].sum()
+        total_acceptances = code_completion_df['total_code_acceptances'].sum()
+        
         # Display metrics
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Active Users", df['total_active_users'].sum())
+            st.metric("Total Active Users", total_active_users)
         with col2:
-            st.metric("Total IDE Chats", ide_chat_df['total_chats'].sum())
+            st.metric("Total IDE Chats", total_chats)
         with col3:
-            st.metric("Total Code Suggestions", code_completion_df['total_code_suggestions'].sum())
+            st.metric("Total Code Suggestions", total_suggestions)
         with col4:
-            st.metric("Total Code Acceptances", code_completion_df['total_code_acceptances'].sum())
+            st.metric("Total Code Acceptances", total_acceptances)
         
         # User Statistics Section
         st.subheader("User Statistics")
@@ -239,18 +238,20 @@ def main():
             st.metric("Total Unique Engaged Users", df['total_engaged_users'].sum())
         
         with user_col2:
+            engagement_rate = (total_engaged_users / total_active_users) * 100 if total_active_users > 0 else 0
             st.metric("Average Daily Engagement Rate", 
-                     round((df['total_engaged_users'].sum() / df['total_active_users'].sum()) * 100, 2),
-                     delta=f"{round((df['total_engaged_users'].iloc[-1] / df['total_active_users'].iloc[-1] - df['total_engaged_users'].iloc[0] / df['total_active_users'].iloc[0]) * 100, 2)}%")
+                     round(engagement_rate, 2),
+                     delta=f"{round((df['total_engaged_users'].iloc[-1] / df['total_active_users'].iloc[-1] - df['total_engaged_users'].iloc[0] / df['total_active_users'].iloc[0]) * 100, 2)}%" if len(df) > 0 and df['total_active_users'].iloc[0] > 0 and df['total_active_users'].iloc[-1] > 0 else None)
             st.metric("Average Chats per User", 
-                     round(ide_chat_df['total_chats'].sum() / df['total_active_users'].sum(), 2))
+                     round(total_chats / total_active_users, 2) if total_active_users > 0 else 0)
             st.metric("Average Code Acceptances per User",
-                     round(code_completion_df['total_code_acceptances'].sum() / df['total_active_users'].sum(), 2))
+                     round(total_acceptances / total_active_users, 2) if total_active_users > 0 else 0)
         
         with user_col3:
             st.metric("GitHub.com Chat Users", df['copilot_dotcom_chat.total_engaged_users'].sum())
             st.metric("GitHub.com PR Users", df['copilot_dotcom_pull_requests.total_engaged_users'].sum())
-            engagement_ratio = round((df['copilot_ide_chat.total_engaged_users'].sum() / df['total_engaged_users'].sum()) * 100, 2)
+            ide_chat_engaged = df['copilot_ide_chat.total_engaged_users'].sum()
+            engagement_ratio = round((ide_chat_engaged / total_engaged_users) * 100, 2) if total_engaged_users > 0 else 0
             st.metric("IDE Chat Engagement Ratio", f"{engagement_ratio}%")
         
         # Display visualizations
@@ -273,63 +274,65 @@ def main():
         tab1, tab2, tab3 = st.tabs(tabs)
         
         with tab1:
-            # Calculate IDE Chat metrics with totals
-            ide_chat_metrics = ide_chat_df.groupby('editor').agg({
+            # Calculate IDE Chat metrics with totals - optimized
+            ide_chat_metrics = ide_chat_df.groupby('editor', as_index=False).agg({
                 'total_chats': 'sum',
                 'total_engaged_users': 'sum',
                 'total_chat_copy_events': 'sum',
                 'total_chat_insertion_events': 'sum'
-            }).reset_index()
+            })
             
-            # Add total row
-            total_row = pd.DataFrame([{
-                'editor': 'TOTAL',
-                'total_chats': ide_chat_metrics['total_chats'].sum(),
-                'total_engaged_users': ide_chat_metrics['total_engaged_users'].sum(),
-                'total_chat_copy_events': ide_chat_metrics['total_chat_copy_events'].sum(),
-                'total_chat_insertion_events': ide_chat_metrics['total_chat_insertion_events'].sum()
-            }])
+            # Add total row using loc instead of concat
+            total_idx = len(ide_chat_metrics)
+            ide_chat_metrics.loc[total_idx] = [
+                'TOTAL',
+                ide_chat_metrics['total_chats'].sum(),
+                ide_chat_metrics['total_engaged_users'].sum(),
+                ide_chat_metrics['total_chat_copy_events'].sum(),
+                ide_chat_metrics['total_chat_insertion_events'].sum()
+            ]
             
-            # Combine metrics with total row
-            ide_chat_metrics = pd.concat([ide_chat_metrics, total_row], ignore_index=True)
             st.dataframe(ide_chat_metrics)
         
         with tab2:
-            # Calculate Code Completion metrics with totals
-            code_completion_metrics = code_completion_df.groupby('language').agg({
+            # Calculate Code Completion metrics with totals - optimized
+            code_completion_metrics = code_completion_df.groupby('language', as_index=False).agg({
                 'total_code_suggestions': 'sum',
                 'total_code_acceptances': 'sum',
                 'total_code_lines_suggested': 'sum',
                 'total_code_lines_accepted': 'sum'
-            }).reset_index()
+            })
             
-            # Add total row
-            total_row = pd.DataFrame([{
-                'language': 'TOTAL',
-                'total_code_suggestions': code_completion_metrics['total_code_suggestions'].sum(),
-                'total_code_acceptances': code_completion_metrics['total_code_acceptances'].sum(),
-                'total_code_lines_suggested': code_completion_metrics['total_code_lines_suggested'].sum(),
-                'total_code_lines_accepted': code_completion_metrics['total_code_lines_accepted'].sum()
-            }])
+            # Add total row using loc instead of concat
+            total_idx = len(code_completion_metrics)
+            code_completion_metrics.loc[total_idx] = [
+                'TOTAL',
+                code_completion_metrics['total_code_suggestions'].sum(),
+                code_completion_metrics['total_code_acceptances'].sum(),
+                code_completion_metrics['total_code_lines_suggested'].sum(),
+                code_completion_metrics['total_code_lines_accepted'].sum()
+            ]
             
-            # Combine metrics with total row
-            code_completion_metrics = pd.concat([code_completion_metrics, total_row], ignore_index=True)
             st.dataframe(code_completion_metrics)
             
         with tab3:
-            # Calculate User Engagement metrics
-            user_engagement_metrics = df.groupby('date').agg({
+            # Calculate User Engagement metrics - optimized
+            user_engagement_metrics = df.groupby('date', as_index=False).agg({
                 'total_active_users': 'sum',
                 'total_engaged_users': 'sum',
                 'copilot_ide_chat.total_engaged_users': 'sum',
                 'copilot_ide_code_completions.total_engaged_users': 'sum'
-            }).reset_index()
+            })
             
-            # Calculate engagement rates
-            user_engagement_metrics['chat_engagement_rate'] = (user_engagement_metrics['copilot_ide_chat.total_engaged_users'] / 
-                                                            user_engagement_metrics['total_active_users'] * 100)
-            user_engagement_metrics['code_engagement_rate'] = (user_engagement_metrics['copilot_ide_code_completions.total_engaged_users'] / 
-                                                            user_engagement_metrics['total_active_users'] * 100)
+            # Calculate engagement rates with safe division
+            user_engagement_metrics['chat_engagement_rate'] = (
+                user_engagement_metrics['copilot_ide_chat.total_engaged_users'] / 
+                user_engagement_metrics['total_active_users'] * 100
+            ).fillna(0)
+            user_engagement_metrics['code_engagement_rate'] = (
+                user_engagement_metrics['copilot_ide_code_completions.total_engaged_users'] / 
+                user_engagement_metrics['total_active_users'] * 100
+            ).fillna(0)
             
             st.dataframe(user_engagement_metrics)
             
