@@ -242,9 +242,17 @@ def main():
         
         with user_col2:
             engagement_rate = (total_engaged_users / total_active_users) * 100 if total_active_users > 0 else 0
+            
+            # Calculate engagement rate delta with safe division
+            engagement_delta = None
+            if len(df) > 0 and df['total_active_users'].iloc[0] > 0 and df['total_active_users'].iloc[-1] > 0:
+                first_rate = df['total_engaged_users'].iloc[0] / df['total_active_users'].iloc[0]
+                last_rate = df['total_engaged_users'].iloc[-1] / df['total_active_users'].iloc[-1]
+                engagement_delta = f"{round((last_rate - first_rate) * 100, 2)}%"
+            
             st.metric("Average Daily Engagement Rate", 
                      round(engagement_rate, 2),
-                     delta=f"{round((df['total_engaged_users'].iloc[-1] / df['total_active_users'].iloc[-1] - df['total_engaged_users'].iloc[0] / df['total_active_users'].iloc[0]) * 100, 2)}%" if len(df) > 0 and df['total_active_users'].iloc[0] > 0 and df['total_active_users'].iloc[-1] > 0 else None)
+                     delta=engagement_delta)
             st.metric("Average Chats per User", 
                      round(total_chats / total_active_users, 2) if total_active_users > 0 else 0)
             st.metric("Average Code Acceptances per User",
