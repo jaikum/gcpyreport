@@ -27,22 +27,31 @@ def process_data(json_data):
     if df.empty:
         return df
     
-    # Convert datetime strings to datetime objects
+    # Convert datetime strings to datetime objects - do this once
     date_columns = ['created_at', 'updated_at', 'last_activity_at']
     for col in date_columns:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col])
     
-    # Extract team information
+    # Extract team information using single pass - optimized
     if 'assigning_team' in df.columns:
-        df['team_name'] = df['assigning_team'].apply(lambda x: x.get('name') if x else None)
-        df['team_id'] = df['assigning_team'].apply(lambda x: x.get('id') if x else None)
+        def extract_team(x):
+            if isinstance(x, dict):
+                return pd.Series({'team_name': x.get('name'), 'team_id': x.get('id')})
+            return pd.Series({'team_name': None, 'team_id': None})
+        df[['team_name', 'team_id']] = df['assigning_team'].apply(extract_team)
     
-    # Extract assignee information
+    # Extract assignee information using single pass - optimized
     if 'assignee' in df.columns:
-        df['user_login'] = df['assignee'].apply(lambda x: x.get('login') if x else None)
-        df['user_type'] = df['assignee'].apply(lambda x: x.get('type') if x else None)
-        df['user_id'] = df['assignee'].apply(lambda x: x.get('id') if x else None)
+        def extract_assignee(x):
+            if isinstance(x, dict):
+                return pd.Series({
+                    'user_login': x.get('login'),
+                    'user_type': x.get('type'),
+                    'user_id': x.get('id')
+                })
+            return pd.Series({'user_login': None, 'user_type': None, 'user_id': None})
+        df[['user_login', 'user_type', 'user_id']] = df['assignee'].apply(extract_assignee)
     
     # Add total seats count from the root level
     df['total_available_seats'] = json_data.get('total_seats', 0)
@@ -75,7 +84,7 @@ else:
 # Sidebar filters
 st.sidebar.header("Filters")
 
-# Date range filter
+# Date range filter - use datetime comparison instead of .date()
 min_date = df['created_at'].min().date()
 max_date = df['created_at'].max().date()
 date_range = st.sidebar.date_input(
@@ -89,10 +98,13 @@ date_range = st.sidebar.date_input(
 all_teams = ['All Teams'] + sorted(df['team_name'].unique().tolist())
 selected_team = st.sidebar.selectbox("Select Team", all_teams)
 
-# Apply filters
+# Apply filters - use datetime comparison to avoid .dt.date conversion
 if len(date_range) == 2:
     start_date, end_date = date_range
-    mask = (df['created_at'].dt.date >= start_date) & (df['created_at'].dt.date <= end_date)
+    # Convert to datetime for comparison (more efficient than .dt.date)
+    start_datetime = pd.Timestamp(start_date)
+    end_datetime = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    mask = (df['created_at'] >= start_datetime) & (df['created_at'] <= end_datetime)
     filtered_df = df[mask]
 else:
     filtered_df = df
@@ -138,30 +150,36 @@ with col1:
 
 with col2:
     st.subheader("Activity Timeline")
-    activity_data = filtered_df[filtered_df['last_activity_at'].notna()].copy()
-    activity_data['date'] = activity_data['last_activity_at'].dt.date
-    daily_activity = activity_data.groupby('date').size().reset_index(name='count')
-    fig_timeline = px.line(
-        daily_activity,
-        x='date',
-        y='count',
-        title="Daily Active Users"
-    )
-    fig_timeline.update_traces(mode='lines+markers')
-    st.plotly_chart(fig_timeline, use_container_width=True)
+    # Optimized - avoid unnecessary copy and intermediate date column
+    activity_data = filtered_df[filtered_df['last_activity_at'].notna()]
+    if not activity_data.empty:
+        # Group by date directly without creating intermediate column
+        daily_activity = activity_data.groupby(activity_data['last_activity_at'].dt.date).size().reset_index(name='count')
+        daily_activity.columns = ['date', 'count']
+        fig_timeline = px.line(
+            daily_activity,
+            x='date',
+            y='count',
+            title="Daily Active Users"
+        )
+        fig_timeline.update_traces(mode='lines+markers')
+        st.plotly_chart(fig_timeline, use_container_width=True)
+    else:
+        st.info("No activity data available for the selected period")
 
 # Team-wise summary table
 st.subheader("Team-wise User Summary")
-team_summary = filtered_df.groupby('team_name').agg({
+team_summary = filtered_df.groupby('team_name', as_index=False).agg({
     'user_login': 'count',
     'last_activity_at': lambda x: x.notna().sum(),
     'created_at': 'min'
-}).reset_index()
+})
 
 team_summary.columns = ['Team', 'Total Users', 'Active Users', 'First Seat Created']
 team_summary['Inactive Users'] = team_summary['Total Users'] - team_summary['Active Users']
 team_summary['Active %'] = (team_summary['Active Users'] / team_summary['Total Users'] * 100).round(1)
-team_summary['First Seat Created'] = team_summary['First Seat Created'].dt.date
+# Convert to date after aggregation for display
+team_summary['First Seat Created'] = pd.to_datetime(team_summary['First Seat Created']).dt.date
 
 # Sort by total users in descending order
 team_summary = team_summary.sort_values('Total Users', ascending=False)
